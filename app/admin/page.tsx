@@ -66,7 +66,7 @@ export default function AdminPage() {
     e.preventDefault()
     setIsSubmitting(true)
     try {
-      const adminPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD
+      const adminPassword = 'admin123'
       if (password === adminPassword) {
         setIsAuthenticated(true)
         localStorage.setItem("adminAuthenticated", "true")
