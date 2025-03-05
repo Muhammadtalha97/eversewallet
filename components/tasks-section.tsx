@@ -12,6 +12,8 @@ import {
   increment,
   arrayUnion,
   getDoc,
+  collection,
+  getDocs,
 } from "firebase/firestore";
 
 interface Task {
@@ -37,14 +39,16 @@ export function TasksSection({ onTaskComplete }: TasksSectionProps) {
     loadCompletedTasks();
   }, []);
 
-  // Fetch tasks from the API
+  // Fetch tasks from Firestore
   const fetchTasks = async () => {
     try {
-      const response = await fetch("/api/admin/tasks");
-      if (response.ok) {
-        const data = await response.json();
-        setTasks(data);
-      }
+      const tasksCollection = collection(db, "tasks");
+      const tasksSnapshot = await getDocs(tasksCollection);
+      const tasksData = tasksSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Task[];
+      setTasks(tasksData);
     } catch (error) {
       console.error("Failed to fetch tasks:", error);
     }
