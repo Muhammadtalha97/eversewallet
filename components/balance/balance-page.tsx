@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, Plus, ArrowUp, RefreshCw, Wallet } from "lucide-react";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { tonConnector } from "@/lib/ton-connector";
+import { getTonConnector } from "@/lib/ton-connector";
 import { toast } from "sonner";
+import { TonConnectUI } from "@tonconnect/ui";
 
 interface BalancePageProps {
   onBack: () => void;
@@ -14,32 +15,41 @@ interface BalancePageProps {
 
 export function BalancePage({ onBack, totalBalance }: BalancePageProps) {
   const [isWalletConnected, setIsWalletConnected] = useState(false);
+  const isTelegramApp = false; // Define the variable here
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isTelegramApp, setIsTelegramApp] = useState(false);
+  const [tonConnect, setTonConnect] = useState<TonConnectUI | null>(null);
 
   useEffect(() => {
-    setIsTelegramApp(Boolean((window as any)?.Telegram?.WebApp));
+    const connector = getTonConnector();
+    setTonConnect(connector);
 
-    const connectionState = tonConnector.getConnectionState();
-    setIsWalletConnected(connectionState.connected);
-    setWalletAddress(connectionState.address);
+    const handleStatusChange = (walletInfo: any) => {
+      setIsWalletConnected(!!walletInfo);
+      setWalletAddress(walletInfo?.account?.address || null);
+    };
 
-    if (connectionState.error) {
-      toast.error(connectionState.error);
+    if (connector) {
+      // Initial state check
+      handleStatusChange(connector.account);
+      
+      // Subscribe to changes
+      connector.onStatusChange(handleStatusChange);
     }
+
+    return () => {
+      if (connector) {
+        connector.onStatusChange(handleStatusChange);
+      }
+    };
   }, []);
 
   const handleConnectWallet = async () => {
-    if (!isTelegramApp) {
-      toast.error("Wallet connection is only available in Telegram app");
-      return;
-    }
+    if (!tonConnect) return;
+
     if (isWalletConnected) {
       try {
-        await tonConnector.disconnect();
-        setIsWalletConnected(false);
-        setWalletAddress(null);
+        await tonConnect.disconnect();
         toast.success("Wallet disconnected");
       } catch (error) {
         toast.error("Failed to disconnect wallet");
@@ -49,23 +59,11 @@ export function BalancePage({ onBack, totalBalance }: BalancePageProps) {
 
     setIsConnecting(true);
     try {
-      await tonConnector.connect();
-      await new Promise((resolve) => setTimeout(resolve, 300)); // Temporary fix
-      const connectionState = tonConnector.getConnectionState();
-      await tonConnector.connect();
-      console.log("Connection State:", connectionState); // Add this line
-      setIsWalletConnected(connectionState.connected);
-      setWalletAddress(connectionState.address);
-
-      if (connectionState.error) {
-        toast.error(connectionState.error);
-      } else if (connectionState.connected) {
-        toast.success("Wallet connected successfully");
-      }
+      await tonConnect.connectWallet();
+      toast.success("Wallet connected successfully");
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to connect wallet"
-      );
+      const errorMessage = error instanceof Error ? error.message : "Connection failed";
+      toast.error(errorMessage);
     } finally {
       setIsConnecting(false);
     }
@@ -143,24 +141,25 @@ export function BalancePage({ onBack, totalBalance }: BalancePageProps) {
               ? "Connect your Telegram Wallet for rewards"
               : "Connect TON wallet for future rewards"}
           </p>
+           <div id="ton-connect-button" style={{ display: 'none' }}></div>
           <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={handleConnectWallet}
-            disabled={isConnecting}
-            className={`w-full rounded-lg px-6 py-3 font-medium text-white transition-colors ${
-              isConnecting
-                ? "bg-gray-500 cursor-not-allowed"
-                : isWalletConnected
-                ? "bg-red-500 hover:bg-red-600"
-                : "bg-[#0088CC] hover:bg-[#0077B5]"
-            }`}
-          >
-            {isConnecting
-              ? "Connecting..."
+          whileTap={{ scale: 0.95 }}
+          onClick={handleConnectWallet}
+          disabled={isConnecting}
+          className={`w-full rounded-lg px-6 py-3 font-medium text-white transition-colors ${
+            isConnecting
+              ? "bg-gray-500 cursor-not-allowed"
               : isWalletConnected
-              ? "Disconnect Wallet"
-              : "Connect Wallet"}
-          </motion.button>
+              ? "bg-red-500 hover:bg-red-600"
+              : "bg-[#0088CC] hover:bg-[#0077B5]"
+          }`}
+        >
+          {isConnecting
+            ? "Connecting..."
+            : isWalletConnected
+            ? "Disconnect Wallet"
+            : "Connect Wallet"}
+        </motion.button>
           {walletAddress && (
             <p className="mt-2 text-xs text-gray-400">
               Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}

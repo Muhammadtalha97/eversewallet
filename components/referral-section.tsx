@@ -1,24 +1,47 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { motion } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Copy, Users } from 'lucide-react'
 import { Button } from "@/components/ui/button"
-import { useReferral } from "@/hooks/useReferral"
+import { useAuthState } from "react-firebase-hooks/auth"
+import { auth, getUserData } from "@/lib/firebase"
+import { useRouter } from "next/navigation";
 
 export function ReferralSection() {
-  const { referralCode } = useReferral()
   const [copied, setCopied] = useState(false)
-  console.log('hi this is referal')
+  const [userData, setUserData] = useState<any>(null);
+  const [user, loading] = useAuthState(auth);
+  const [mounted, setMounted] = useState(false);
+  const router = useRouter();
+ useEffect(() => {
+    setMounted(true);
+  }, []);
+useEffect(() => {
+    if (mounted && !loading && !user) {
+      router.push("/");
+    }
+  }, [user, loading, router, mounted]);
 
+  // User data fetching
+  useEffect(() => {
+    const fetchData = async () => {
+      if (user) {
+        const data = await getUserData(user.uid);
+        setUserData(data);
+      }
+    };
+    if (mounted) fetchData();
+  }, [user, mounted]);
   const copyReferralCode = () => {
-    if (referralCode) {
-      navigator.clipboard.writeText(referralCode)
+    if (userData.referralToken) {
+      navigator.clipboard.writeText(userData.referralToken)
       setCopied(true)
     }
     setTimeout(() => setCopied(false), 2000)
   }
+  
 
   return (
     <Card className="w-full max-w-md border-[#9FE635]/20">
@@ -32,7 +55,7 @@ export function ReferralSection() {
         <div className="rounded-lg bg-black/50 p-4">
           <div className="text-sm text-gray-400">Your Referral Code</div>
           <div className="mt-2 flex items-center justify-between">
-            <code className="text-lg font-medium text-[#9FE635]">{referralCode} </code>
+            <code className="text-lg font-medium text-[#9FE635]">{userData.referralToken} </code>
             <Button
               variant="ghost"
               size="sm"

@@ -1,24 +1,28 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
+import { db } from "@/lib/firebase" // Import Firebase Firestore
+import { collection, query, getDocs, addDoc, doc, updateDoc, deleteDoc, Timestamp } from "firebase/firestore"
 
 interface User {
-  walletAddress: string
-  referralCode: string
-  totalMined: number
+  createdAt: Timestamp,
+  email: string
+  erveBalance: number
   level: number
-  createdAt: string
+  miningSpeed: number
+  numberOfReferrals: number
+  points: number
+  referralToken: string
+  referredBy: string
 }
 
 interface Task {
-  _id: string
+  id: string
   title: string
   description: string
   reward: number
@@ -49,49 +53,23 @@ export default function AdminPage() {
   })
 
   useEffect(() => {
-    const authToken = localStorage.getItem("adminToken")
-    if (authToken) {
-      verifyAuth(authToken)
+    const storedAuth = localStorage.getItem("adminAuthenticated")
+    if (storedAuth === "true") {
+      setIsAuthenticated(true)
+      fetchData()
     } else {
       setIsLoading(false)
     }
   }, [])
 
-  const verifyAuth = async (token?: string) => {
-    try {
-      const res = await fetch("/api/admin/verify", {
-        headers: {
-          Authorization: token || "",
-        },
-      })
-      if (res.ok) {
-        setIsAuthenticated(true)
-        fetchData()
-      }
-    } catch (error) {
-      console.error("Auth verification failed:", error)
-      toast.error("Authentication failed")
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
     try {
-      const res = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ password }),
-      })
-
-      if (res.ok) {
-        const { token } = await res.json()
-        localStorage.setItem("adminToken", token)
+      const adminPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD
+      if (password === adminPassword) {
         setIsAuthenticated(true)
+        localStorage.setItem("adminAuthenticated", "true")
         fetchData()
         toast.success("Login successful")
       } else {
@@ -107,27 +85,33 @@ export default function AdminPage() {
   const fetchData = async () => {
     setIsLoading(true)
     try {
-      const [usersRes, tasksRes] = await Promise.all([
-        fetch("/api/admin/users", {
-          headers: {
-            Authorization: localStorage.getItem("adminToken") || "",
-          },
-        }),
-        fetch("/api/admin/tasks", {
-          headers: {
-            Authorization: localStorage.getItem("adminToken") || "",
-          },
-        }),
-      ])
-
-      if (!usersRes.ok || !tasksRes.ok) {
-        throw new Error("Failed to fetch data")
+      // Fetch users from Firestore
+      const usersQuery = query(collection(db, "users"))
+      const usersSnapshot = await getDocs(usersQuery)
+      if (usersSnapshot.empty) {
+        console.log("No users found")
+      } else {
+        const usersData = usersSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as unknown as User[]
+        setUsers(usersData)
       }
 
-      const [usersData, tasksData] = await Promise.all([usersRes.json(), tasksRes.json()])
-      setUsers(usersData)
-      setTasks(tasksData)
+      // Fetch tasks from Firestore
+      const tasksQuery = query(collection(db, "tasks"))
+      const tasksSnapshot = await getDocs(tasksQuery)
+      if (tasksSnapshot.empty) {
+        console.log("No tasks found")
+      } else {
+        const tasksData = tasksSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Task[]
+        setTasks(tasksData)
+      }
     } catch (error) {
+      console.error("Error fetching data:", error)
       toast.error("Failed to fetch data")
     } finally {
       setIsLoading(false)
@@ -138,29 +122,19 @@ export default function AdminPage() {
     e.preventDefault()
     setIsSubmitting(true)
     try {
-      const res = await fetch("/api/admin/tasks", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: localStorage.getItem("adminToken") || "",
-        },
-        body: JSON.stringify(newTask),
+      const taskRef = await addDoc(collection(db, "tasks"), {
+        ...newTask,
+        active: true,
       })
-
-      if (res.ok) {
-        toast.success("Task added successfully")
-        setNewTask({
-          title: "",
-          description: "",
-          reward: 0,
-          type: "SOCIAL",
-          xLink: "",
-        })
-        fetchData()
-      } else {
-        const data = await res.json()
-        toast.error(data.error || "Failed to add task")
-      }
+      toast.success("Task added successfully")
+      setNewTask({
+        title: "",
+        description: "",
+        reward: 0,
+        type: "SOCIAL",
+        xLink: "",
+      })
+      fetchData()
     } catch (error) {
       toast.error("Failed to add task")
     } finally {
@@ -168,25 +142,25 @@ export default function AdminPage() {
     }
   }
 
+
   const toggleTaskStatus = async (taskId: string, active: boolean) => {
     try {
-      const res = await fetch(`/api/admin/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: localStorage.getItem("adminToken") || "",
-        },
-        body: JSON.stringify({ active: !active }),
-      })
-
-      if (res.ok) {
-        toast.success("Task status updated")
-        fetchData()
-      } else {
-        toast.error("Failed to update task status")
-      }
+      const taskRef = doc(db, "tasks", taskId)
+      await updateDoc(taskRef, { active: !active })
+      toast.success("Task status updated")
+      fetchData()
     } catch (error) {
       toast.error("Failed to update task status")
+    }
+  }
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await deleteDoc(doc(db, "tasks", taskId))
+      toast.success("Task deleted successfully")
+      fetchData()
+    } catch (error) {
+      toast.error("Failed to delete task")
     }
   }
 
@@ -228,7 +202,7 @@ export default function AdminPage() {
           <h1 className="text-2xl font-bold">Admin Dashboard</h1>
           <Button
             onClick={() => {
-              localStorage.removeItem("adminToken")
+              localStorage.removeItem("adminAuthenticated")
               setIsAuthenticated(false)
             }}
             variant="destructive"
@@ -292,7 +266,7 @@ export default function AdminPage() {
           <h2 className="text-xl font-bold mb-4">Tasks</h2>
           <div className="space-y-4">
             {tasks.map((task) => (
-              <div key={task._id} className="flex items-center justify-between p-4 bg-white rounded-lg shadow">
+              <div key={task.id} className="flex items-center justify-between p-4 bg-white rounded-lg shadow">
                 <div>
                   <h3 className="font-medium">{task.title}</h3>
                   <p className="text-sm text-gray-500">{task.description}</p>
@@ -309,12 +283,20 @@ export default function AdminPage() {
                     </a>
                   )}
                 </div>
-                <Button
-                  onClick={() => toggleTaskStatus(task._id, task.active)}
-                  variant={task.active ? "destructive" : "default"}
-                >
-                  {task.active ? "Disable" : "Enable"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => toggleTaskStatus(task.id, task.active)}
+                    variant={task.active ? "destructive" : "default"}
+                  >
+                    {task.active ? "Disable" : "Enable"}
+                  </Button>
+                  <Button
+                    onClick={() => handleDeleteTask(task.id)}
+                    variant="destructive"
+                  >
+                    Delete
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -324,23 +306,26 @@ export default function AdminPage() {
           <h2 className="text-xl font-bold mb-4">Users ({users.length})</h2>
           <div className="space-y-4">
             {users.map((user) => (
-              <div key={user.referralCode} className="p-4 bg-white rounded-lg shadow">
+              <div key={user.referralToken} className="p-4 bg-white rounded-lg shadow">
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="font-medium">Code: {user.referralCode}</p>
-                    <p className="text-sm text-gray-500">
-                      Wallet:{" "}
-                      {user.walletAddress
-                        ? `${user.walletAddress.slice(0, 6)}...${user.walletAddress.slice(-4)}`
-                        : "Not connected"}
-                    </p>
+                    <p className="font-medium">Email: {user.email}</p>
+                    <p className="text-sm text-gray-500">Referral Token: {user.referralToken}</p>
+                    <p className="text-sm text-gray-500">Referred By: {user.referredBy || "None"}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-medium">{user.totalMined.toFixed(2)} ERVE</p>
+                    <p className="font-medium">{user.erveBalance.toFixed(4)} ERVE</p>
                     <p className="text-sm text-gray-500">Level {user.level}</p>
                   </div>
                 </div>
-                <p className="text-sm text-gray-500 mt-2">Joined: {new Date(user.createdAt).toLocaleDateString()}</p>
+                <div className="mt-2">
+                  <p className="text-sm text-gray-500">Mining Speed: {user.miningSpeed}</p>
+                  <p className="text-sm text-gray-500">Referrals: {user.numberOfReferrals}</p>
+                  <p className="text-sm text-gray-500">Points: {user.points}</p>
+                  <p className="text-sm text-gray-500">
+                    Joined: {user.createdAt.toDate().toLocaleDateString()}
+                    </p>
+                </div>
               </div>
             ))}
           </div>
@@ -349,4 +334,3 @@ export default function AdminPage() {
     </div>
   )
 }
-

@@ -1,11 +1,15 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
+import { doc, updateDoc, increment } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
-import { useReferral } from "@/hooks/useReferral";
 import { toast } from "react-hot-toast";
+import { auth, getUserData } from "@/lib/firebase";
+import { useAuthState } from "react-firebase-hooks/auth";
+import { useRouter } from "next/navigation";
 
 interface GuildPageProps {
   onBack: () => void;
@@ -85,21 +89,49 @@ const guildLevels: {
 
 export function GuildPage({ onBack }: GuildPageProps) {
   const [currentLevel, setCurrentLevel] = useState(0);
-  const { referralCode } = useReferral();
   const [slideDirection, setSlideDirection] = useState("right");
-  const [dynamicPercentage, setDynamicPercentage] = useState("Refer 3 friends to level up");
-const [shareCount, setShareCount] = useState(0);
+  const [dynamicPercentage, setDynamicPercentage] = useState(
+    "Refer 3 friends to level up"
+  );
+  const [shareCount, setShareCount] = useState(0);
+  const [userData, setUserData] = useState<any>(null);
+  const [user, loading] = useAuthState(auth);
+  const [mounted, setMounted] = useState(false);
+  const router = useRouter();
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
-  if (shareCount >= 3 && currentLevel === 0) {
-    setCurrentLevel(1);
-  }
-  if (currentLevel === 0) {
-    setDynamicPercentage(`Refer ${shareCount}/3 friends to level up`);
-  } else {
-    setDynamicPercentage(guildLevels[currentLevel].percentage);
-  }
-}, [shareCount, currentLevel]);
+    if (mounted && !loading && !user) {
+      router.push("/");
+    }
+  }, [user, loading, router, mounted]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (user) {
+        const data = await getUserData(user.uid);
+        if (data) {
+          setUserData(data);
+          const initialLevel = data.level ? data.level - 1 : 0;
+          setCurrentLevel(initialLevel);
+        }
+      }
+    };
+    if (mounted) fetchData();
+  }, [user, mounted]);
+
+  // Update dynamic percentage
+  useEffect(() => {
+    if (guildLevels[currentLevel].id === 1) {
+      const referrals = userData?.numberOfReferrals || 0;
+      setDynamicPercentage(`Refer ${referrals}/3 friends to level up`);
+    } else {
+      setDynamicPercentage(guildLevels[currentLevel].percentage);
+    }
+  }, [currentLevel, userData?.numberOfReferrals]);
+
 
   const nextLevel = () => {
     if (currentLevel < guildLevels.length - 1) {
@@ -115,8 +147,13 @@ const [shareCount, setShareCount] = useState(0);
     }
   };
 
-  const handleShare = async () => {
-    const referralLink = `${window.location.origin}?ref=${referralCode}`;
+ const handleShare = async () => {
+    if (!userData?.referralToken || !user) {
+      toast.error("Referral information not available");
+      return;
+    }
+
+    const referralLink = `${window.location.origin}?ref=${userData.referralToken}`;
     try {
       if (navigator.share) {
         await navigator.share({
@@ -128,12 +165,30 @@ const [shareCount, setShareCount] = useState(0);
         await navigator.clipboard.writeText(referralLink);
         toast.success("Link copied! Share with friends.");
       }
-      setShareCount((prev) => prev + 1);
+
+      // Update referrals in Firestore
+      const userRef = doc(db, "users", user.uid);
+      await updateDoc(userRef, {
+        numberOfReferrals: increment(1)
+      });
+
+      const updatedData = await getUserData(user.uid);
+      setUserData(updatedData);
+
+     // Check for level up (Firestore level 1 → id 1 → needs 3 referrals)
+      if (updatedData.numberOfReferrals >= 3 && updatedData.level === 1) {
+        await updateDoc(userRef, { level: 2, miningSpeed: 0.6 });
+        setUserData((prev: any) => ({ ...prev, level: 2,miningSpeed: 0.6 }));
+        setCurrentLevel(1); // Index for id 2
+      }
+
     } catch (error) {
       toast.error("Sharing failed. Try again.");
       console.error("Sharing failed:", error);
     }
   };
+
+  
 
   const level = guildLevels[currentLevel];
 
@@ -183,11 +238,13 @@ const [shareCount, setShareCount] = useState(0);
                 />
               </div>
               <h2 className="text-xl font-semibold">{level.name}</h2>
-             {level.name != "Prospector" && ( <p className="text-sm text-gray-500">
-              {level.percentage}</p>)}
+              {level.name != "Prospector" && (
+                <p className="text-sm text-gray-500">{level.percentage}</p>
+              )}
 
               {level.name === "Prospector" && (
-              <p className="text-sm text-gray-500">{dynamicPercentage}</p>)}
+                <p className="text-sm text-gray-500">{dynamicPercentage}</p>
+              )}
             </motion.div>
           </AnimatePresence>
 
