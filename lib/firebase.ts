@@ -103,6 +103,7 @@ export const createUser = async (
     referralToken,
     referredBy: referralCode || null,
     points: 0,
+    completedTasks: [],
     level: 1,
     miningSpeed: 0.458,
     erveBalance: 0,

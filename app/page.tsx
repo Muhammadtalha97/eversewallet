@@ -21,7 +21,7 @@ export default function Home() {
   const [user, loading] = useAuthState(auth);
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
- useEffect(() => {
+  useEffect(() => {
     setMounted(true);
   }, []);
   useEffect(() => {
@@ -44,7 +44,10 @@ export default function Home() {
     }
   }, []);
 
-
+  const handleTaskComplete = (reward: number) => {
+    // Update user's balance with the reward
+    console.log(`User earned ${reward} ERVE tokens!`);
+  };
   if (!user) {
     return <AuthForm />;
   }
@@ -53,22 +56,13 @@ export default function Home() {
     return <SplashScreen />;
   }
 
-  
-
   return (
     <main className="min-h-screen bg-gray-50 pb-20">
       {activeTab === "mining" && (
-        <MiningSection
-          totalMined={totalMined}
-          setTotalMined={setTotalMined}
-        />
+        <MiningSection totalMined={totalMined} setTotalMined={setTotalMined} />
       )}
       {activeTab === "tasks" && (
-        <TasksSection
-          onTaskComplete={(reward) => {
-            setTotalMined((prev) => prev + reward);
-          }}
-        />
+        <TasksSection onTaskComplete={handleTaskComplete} />
       )}
       {activeTab === "frens" && (
         <FrensSection

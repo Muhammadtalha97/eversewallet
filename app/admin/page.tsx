@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Card } from "@/components/ui/card"
+import { v4 as uuidv4 } from "uuid"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
@@ -20,15 +21,14 @@ interface User {
   referralToken: string
   referredBy: string
 }
-
 interface Task {
-  id: string
-  title: string
-  description: string
-  reward: number
-  type: "SOCIAL" | "REFERRAL" | "DAILY"
-  xLink?: string
-  active: boolean
+  id: string; // UUID
+  title: string;
+  description: string;
+  reward: number;
+  type: "SOCIAL" | "REFERRAL" | "DAILY";
+  xLink?: string;
+  active: boolean;
 }
 
 export default function AdminPage() {
@@ -119,28 +119,34 @@ export default function AdminPage() {
   }
 
   const handleAddTask = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
-    try {
-      const taskRef = await addDoc(collection(db, "tasks"), {
-        ...newTask,
-        active: true,
-      })
-      toast.success("Task added successfully")
-      setNewTask({
-        title: "",
-        description: "",
-        reward: 0,
-        type: "SOCIAL",
-        xLink: "",
-      })
-      fetchData()
-    } catch (error) {
-      toast.error("Failed to add task")
-    } finally {
-      setIsSubmitting(false)
-    }
+  e.preventDefault();
+  setIsSubmitting(true);
+  try {
+    // Generate a unique ID for the task
+    const taskId = uuidv4();
+
+    // Add the task to Firestore with the generated ID
+    const taskRef = await addDoc(collection(db, "tasks"), {
+      id: taskId, // Store the UUID in the task document
+      ...newTask,
+      active: true,
+    });
+
+    toast.success("Task added successfully");
+    setNewTask({
+      title: "",
+      description: "",
+      reward: 0,
+      type: "SOCIAL",
+      xLink: "",
+    });
+    fetchData(); // Refresh the task list
+  } catch (error) {
+    toast.error("Failed to add task");
+  } finally {
+    setIsSubmitting(false);
   }
+};
 
 
   const toggleTaskStatus = async (taskId: string, active: boolean) => {
